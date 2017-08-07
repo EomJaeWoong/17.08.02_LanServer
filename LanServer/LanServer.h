@@ -29,8 +29,6 @@ typedef struct stSESSION_INFO
 //-------------------------------------------------------------------------------------
 typedef struct stSESSION
 {
-	bool _bUsed;
-
 	SESSION_INFO _SessionInfo;
 	__int64 _iSessionID;
 
@@ -42,8 +40,6 @@ typedef struct stSESSION
 
 	BOOL _bSendFlag;
 	LONG _lIOCount;
-
-	int _iSendPacketCnt;
 } SESSION;
 
 
@@ -60,19 +56,19 @@ public:
 	//---------------------------------------------------------------------------------
 	// 서버 시작, 멈춤
 	//---------------------------------------------------------------------------------
-	bool Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle, int iMaxConnection);
-	void Stop();
+	bool			Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle, int iMaxConnection);
+	void			Stop();
 
 	//---------------------------------------------------------------------------------
 	// 현재 Session 수
 	//---------------------------------------------------------------------------------
-	int GetClientCount(){ return _iSessionCount; }
+	int				GetClientCount(){ return _iSessionCount; }
 
 protected:
 	//---------------------------------------------------------------------------------
 	// 패킷 보내기
 	//---------------------------------------------------------------------------------
-	bool SendPacket(__int64 iSessionID, CNPacket *pPacket);
+	bool			SendPacket(__int64 iSessionID, CNPacket *pPacket);
 
 	//---------------------------------------------------------------------------------
 	// OnClientJoin			-> 접속처리 완료 후 호출
@@ -86,17 +82,17 @@ protected:
 	// OnWorkerThreadEnd		-> 워커스레드 1루프 끝
 	// OnError				-> 에러 메시지
 	//---------------------------------------------------------------------------------
-	virtual void OnClientJoin(SESSION_INFO* pSessionInfo, __int64 iSessionID) = 0;
-	virtual void OnClientLeave(__int64 iSessionID) = 0;
-	virtual bool OnConnectionRequest(WCHAR *ClientIP, int Port) = 0;
+	virtual void	OnClientJoin(SESSION_INFO* pSessionInfo, __int64 iSessionID) = 0;
+	virtual void	OnClientLeave(__int64 iSessionID) = 0;
+	virtual bool	OnConnectionRequest(WCHAR *ClientIP, int Port) = 0;
 
-	virtual void OnRecv(__int64 iSessionID, CNPacket *pPacket) = 0;
-	virtual void OnSend(__int64 iSessionID, int sendsize) = 0;
+	virtual void	OnRecv(__int64 iSessionID, CNPacket *pPacket) = 0;
+	virtual void	OnSend(__int64 iSessionID, int sendsize) = 0;
 
-	virtual void OnWorkerThreadBegin() = 0;
-	virtual void OnWorkerThreadEnd() = 0;
+	virtual void	OnWorkerThreadBegin() = 0;
+	virtual void	OnWorkerThreadEnd() = 0;
 
-	virtual void OnError(int errorcode, WCHAR* errorMsg) = 0;
+	virtual void	OnError(int errorcode, WCHAR* errorMsg) = 0;
 
 private:
 	//---------------------------------------------------------------------------------
@@ -106,96 +102,90 @@ private:
 	static unsigned __stdcall AcceptThread(LPVOID acceptArg);
 	static unsigned __stdcall MonitorThread(LPVOID monitorArg);
 
-	int WorkerThread_Update();
-	int AcceptThread_Update();
-	int MonitorThread_Update();
+	int				WorkerThread_Update();
+	int				AcceptThread_Update();
+	int				MonitorThread_Update();
 
 	//--------------------------------------------------------------------------------
 	// Recv, Send 등록
 	//--------------------------------------------------------------------------------
-	void RecvPost(SESSION *pSession, bool bAcceptRecv = false);
-	BOOL SendPost(SESSION *pSession);
+	bool			RecvPost(SESSION *pSession, bool bAcceptRecv = false);
+	bool			SendPost(SESSION *pSession);
 
 	//--------------------------------------------------------------------------------
 	// Recv, Send 완료
 	//--------------------------------------------------------------------------------
-	bool CompleteRecv(SESSION *pSession, CNPacket *pPacket);
-	bool CompleteSend(SESSION *pSession);
-
-	//--------------------------------------------------------------------------------
-	// Session Index 관련 함수
-	//--------------------------------------------------------------------------------
-	int GetBlankSessionIndex();
-	void InsertBlankSessionIndex(int iSessionIndex);
+	void			CompleteRecv(SESSION *pSession, CNPacket *pPacket);
+	void			CompleteSend(SESSION *pSession);
 
 	//--------------------------------------------------------------------------------
 	// Disconnect, Release
 	//--------------------------------------------------------------------------------
-	void DisconnectSession(SOCKET socket);
-	void DisconnectSession(SESSION *pSession);
-	void DisconnectSession(__int64 iSessionID);
+	void			SocketClose(SOCKET socket);
+	void			DisconnectSession(SESSION *pSession);
+	void			DisconnectSession(__int64 iSessionID);
 
-	void ReleaseSession(SESSION *pSession);
-	void ReleaseSession(__int64 iSessionID);
+	void			ReleaseSession(SESSION *pSession);
+	void			ReleaseSession(__int64 iSessionID);
 
 public:
 	//--------------------------------------------------------------------------------
 	// 모니터링 변수들
 	//--------------------------------------------------------------------------------
-	int _AcceptCounter;
-	int _AcceptTotalCounter;
-	int _RecvPacketCounter;
-	int _SendPacketCounter;
+	int				_AcceptCounter;
+	int				_AcceptTotalCounter;
+	int				_RecvPacketCounter;
+	int				_SendPacketCounter;
 
-	int _AcceptTPS;
-	int _AcceptTotalTPS;
-	int _RecvPacketTPS;
-	int _SendPacketTPS;
-	int _PacketPoolTPS;
-	int _iSessionCount;
+	int				_AcceptTPS;
+	int				_AcceptTotalTPS;
+	int				_RecvPacketTPS;
+	int				_SendPacketTPS;
+	int				_PacketPoolTPS;
+	int				_iSessionCount;
 
 protected:
 	////////////////////////////////////////////////////////////////////////
 	// IOCP Handle
 	////////////////////////////////////////////////////////////////////////
-	HANDLE hIOCP;
+	HANDLE			hIOCP;
 
 	////////////////////////////////////////////////////////////////////////
 	// Thread Handle
 	////////////////////////////////////////////////////////////////////////
-	HANDLE hAcceptThread;
-	HANDLE hWorkerThread[MAX_THREAD];
-	HANDLE hMonitorThread;
+	HANDLE			hAcceptThread;
+	HANDLE			hWorkerThread[MAX_THREAD];
+	HANDLE			hMonitorThread;
 
 	////////////////////////////////////////////////////////////////////////
 	// listen socket
 	////////////////////////////////////////////////////////////////////////
-	SOCKET listen_sock;
+	SOCKET			listen_sock;
 
 	////////////////////////////////////////////////////////////////////////
 	// Session Array
 	////////////////////////////////////////////////////////////////////////
-	SESSION Session[MAX_SESSION];
+	SESSION			*Session[MAX_SESSION];
 
 	////////////////////////////////////////////////////////////////////////
 	// WorkerThread Count
 	////////////////////////////////////////////////////////////////////////
-	int _iWorkerThdNum;
+	int				_iWorkerThdNum;
 
 	////////////////////////////////////////////////////////////////////////
 	// Session에 부여할 ID(Interlocked)
 	////////////////////////////////////////////////////////////////////////
-	__int64 _iSessionID;
+	__int64			_iSessionID;
 
 	////////////////////////////////////////////////////////////////////////
 	// 쓰레드 종료 flag
 	////////////////////////////////////////////////////////////////////////
-	bool _bShutdown;
+	bool			_bShutdown;
 
 	////////////////////////////////////////////////////////////////////////
 	// Nagle Option
 	////////////////////////////////////////////////////////////////////////
-	bool _bNagle;
+	bool			_bNagle;
 };
 
 #endif
