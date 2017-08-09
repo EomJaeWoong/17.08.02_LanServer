@@ -67,15 +67,15 @@ bool	CLanServer::Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	// IO Completion Port 생성
 	//////////////////////////////////////////////////////////////////////////////////////////////////
-	hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-	if (hIOCP == NULL)
+	_hIOCP = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+	if (_hIOCP == NULL)
 		return false;
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	// socket 생성
 	//////////////////////////////////////////////////////////////////////////////////////////////////
-	listen_sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
-	if (listen_sock == INVALID_SOCKET)
+	_listen_sock = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (_listen_sock == INVALID_SOCKET)
 		return false;
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////
@@ -85,14 +85,14 @@ bool	CLanServer::Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons(iPort);
 	InetPton(AF_INET, wOpenIP, &serverAddr.sin_addr);
-	result = bind(listen_sock, (SOCKADDR *)&serverAddr, sizeof(SOCKADDR_IN));
+	result = bind(_listen_sock, (SOCKADDR *)&serverAddr, sizeof(SOCKADDR_IN));
 	if (result == SOCKET_ERROR)
 		return false;
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	//listen
 	//////////////////////////////////////////////////////////////////////////////////////////////////
-	result = listen(listen_sock, SOMAXCONN);
+	result = listen(_listen_sock, SOMAXCONN);
 	if (result == SOCKET_ERROR)
 		return FALSE;
 
@@ -103,13 +103,13 @@ bool	CLanServer::Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle
 	if (_bNagle == true)
 	{
 		int opt_val = TRUE;
-		setsockopt(listen_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&opt_val, sizeof(opt_val));
+		setsockopt(_listen_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&opt_val, sizeof(opt_val));
 	}
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////
 	// Thread 생성
 	//////////////////////////////////////////////////////////////////////////////////////////////////
-	hAcceptThread = (HANDLE)_beginthreadex(
+	_hAcceptThread = (HANDLE)_beginthreadex(
 		NULL,
 		0,
 		AcceptThread,
@@ -122,7 +122,7 @@ bool	CLanServer::Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle
 
 	for (int iCnt = 0; iCnt < iWorkerThdNum; iCnt++)
 	{
-		hWorkerThread[iCnt] = (HANDLE)_beginthreadex(
+		_hWorkerThread[iCnt] = (HANDLE)_beginthreadex(
 			NULL,
 			0,
 			WorkerThread,
@@ -132,7 +132,7 @@ bool	CLanServer::Start(WCHAR *wOpenIP, int iPort, int iWorkerThdNum, bool bNagle
 			);
 	}
 
-	hMonitorThread = (HANDLE)_beginthreadex(
+	_hMonitorThread = (HANDLE)_beginthreadex(
 		NULL,
 		0,
 		MonitorThread,
@@ -173,13 +173,207 @@ bool	CLanServer::SendPacket(__int64 iSessionID, CNPacket *pPacket)
 // Worker Thread
 int		CLanServer::WorkerThread_Update()
 {
+	int result;
 
+	DWORD dwTransferred;
+	OVERLAPPED *pOverlapped;
+	SESSION *pSession;
+
+	while (!_bShutdown)
+	{
+		///////////////////////////////////////////////////////////////////////////
+		// GQCS 인자 초기화
+		///////////////////////////////////////////////////////////////////////////
+		dwTransferred = 0;
+		pOverlapped = NULL;
+		pSession = NULL;
+
+		result = GetQueuedCompletionStatus(_hIOCP, &dwTransferred, (PULONG_PTR)&pSession,
+			(LPOVERLAPPED *)&pOverlapped, INFINITE);
+
+		//----------------------------------------------------------------------------
+		// Error, 종료 처리
+		//----------------------------------------------------------------------------
+		// IOCP 에러 서버 종료
+		if (result == FALSE && (pOverlapped == NULL || pSession == NULL))
+		{
+			int iErrorCode = WSAGetLastError();
+			OnError(iErrorCode, L"IOCP HANDLE Error\n");
+
+			break;
+		}
+
+		// 워커스레드 정상 종료
+		else if (dwTransferred == 0 && pSession == NULL && pOverlapped == NULL)
+		{
+			OnError(0, L"Worker Thread Done.\n");
+			PostQueuedCompletionStatus(_hIOCP, 0, NULL, NULL);
+			return 0;
+		}
+
+		//----------------------------------------------------------------------------
+		// 정상종료
+		// 클라이언트 에서 closesocket() 혹은 shutdown() 함수를 호출한 시점
+		//----------------------------------------------------------------------------
+		else if (dwTransferred == 0)
+		{
+			if (pOverlapped == &(pSession->_RecvOverlapped))
+			{
+				int i = 0;
+			}
+
+			else if (pOverlapped == &(pSession->_SendOverlapped))
+				pSession->_bSendFlag = false;
+
+			if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
+				ReleaseSession(pSession);
+
+			continue;
+		}
+		//----------------------------------------------------------------------------
+
+		OnWorkerThreadBegin();
+
+		//////////////////////////////////////////////////////////////////////////////
+		// Recv 완료
+		//////////////////////////////////////////////////////////////////////////////
+		if (pOverlapped == &pSession->_RecvOverlapped)
+		{
+			CompleteRecv(pSession, NULL);
+		}
+
+		//////////////////////////////////////////////////////////////////////////////
+		// Send 완료
+		//////////////////////////////////////////////////////////////////////////////
+		else if (pOverlapped == &pSession->_SendOverlapped)
+		{
+			CompleteSend(pSession);
+		}
+
+		if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
+			ReleaseSession(pSession);
+
+		//Count가 0보다 작으면 크래쉬 내기
+		else if (0 > pSession->_lIOCount)
+			// 크래쉬!
+
+		OnWorkerThreadEnd();
+	}
+
+	return 0;
 }
 
 // Accept Thread
 int		CLanServer::AcceptThread_Update()
 {
+	HANDLE result;
 
+	SOCKET ClientSocket;
+	int addrlen = sizeof(SOCKADDR_IN);
+	SOCKADDR_IN clientSock;
+	WCHAR clientIP[16];
+
+	while (!_bShutdown)
+	{
+		//////////////////////////////////////////////////////////////////////////////
+		// Accept
+		//////////////////////////////////////////////////////////////////////////////
+		ClientSocket = WSAAccept(_listen_sock, (SOCKADDR *)&clientSock, &addrlen, NULL, NULL);
+		if (ClientSocket == INVALID_SOCKET)
+		{
+			DisconnectSession(ClientSocket);
+			continue;
+		}
+		InetNtop(AF_INET, &clientSock.sin_addr, clientIP, 16);
+
+		//////////////////////////////////////////////////////////////////////////////
+		// Session수가 꽉 찼을 때
+		//////////////////////////////////////////////////////////////////////////////
+		if (_iSessionCount >= MAX_SESSION)
+			OnError(1, L"Session is Maximun!");
+
+		//////////////////////////////////////////////////////////////////////////////
+		// Request 요청
+		//////////////////////////////////////////////////////////////////////////////
+		if (!OnConnectionRequest(clientIP, ntohs(clientSock.sin_port)))
+		{
+			DisconnectSession(ClientSocket);
+			continue;
+		}
+		InterlockedIncrement64((LONG64 *)&_AcceptCounter);
+		InterlockedIncrement64((LONG64 *)&_AcceptTotalCounter);
+
+		//////////////////////////////////////////////////////////////////////////////
+		// 세션 추가 과정
+		//////////////////////////////////////////////////////////////////////////////
+		for (int iCnt = 0; iCnt < MAX_SESSION; iCnt++)
+		{
+			// 빈 세션
+			if (Session[iCnt]->_SessionInfo._socket == INVALID_SOCKET)
+			{
+				/////////////////////////////////////////////////////////////////////
+				// 세션 초기화
+				/////////////////////////////////////////////////////////////////////
+				wcscpy_s(Session[iCnt]->_SessionInfo._IP, 16, clientIP);
+				Session[iCnt]->_SessionInfo._iPort = ntohs(clientSock.sin_port);
+
+				/////////////////////////////////////////////////////////////////////
+				// KeepAlive
+				/////////////////////////////////////////////////////////////////////
+				tcp_keepalive tcpkl;
+
+				tcpkl.onoff = 1;
+				tcpkl.keepalivetime = 3000; //30초 개발할땐 짧게 라이브땐 2~30초
+				tcpkl.keepaliveinterval = 2000; //  keepalive 신호
+
+				DWORD dwReturnByte;
+				WSAIoctl(ClientSocket, SIO_KEEPALIVE_VALS, &tcpkl, sizeof(tcp_keepalive), 0,
+					0, &dwReturnByte, NULL, NULL);
+				/////////////////////////////////////////////////////////////////////
+
+				Session[iCnt]->_SessionInfo._socket = ClientSocket;
+
+				Session[iCnt]->_iSessionID = InterlockedIncrement64((LONG64 *)&_iSessionID);
+
+				Session[iCnt]->RecvQ.ClearBuffer();
+				Session[iCnt]->SendQ.ClearBuffer();
+
+				memset(&(Session[iCnt]->_RecvOverlapped), 0, sizeof(OVERLAPPED));
+				memset(&(Session[iCnt]->_SendOverlapped), 0, sizeof(OVERLAPPED));
+
+				Session[iCnt]->_bSendFlag = FALSE;
+				Session[iCnt]->_lIOCount = 0;
+
+				/////////////////////////////////////////////////////////////////////
+				// IOCP 등록
+				/////////////////////////////////////////////////////////////////////
+				result = CreateIoCompletionPort((HANDLE)Session[iCnt]->_SessionInfo._socket,
+					_hIOCP,
+					(ULONG_PTR)&Session[iCnt],
+					0);
+				if (!result)
+					PostQueuedCompletionStatus(_hIOCP, 0, 0, 0);
+
+				InterlockedIncrement64((LONG64 *)&Session[iCnt]->_lIOCount);
+
+				/////////////////////////////////////////////////////////////////////
+				// OnClientJoin
+				// 컨텐츠쪽에 세션이 들어왔음을 알림
+				/////////////////////////////////////////////////////////////////////
+				OnClientJoin(&Session[iCnt]->_SessionInfo, Session[iCnt]->_iSessionID);
+
+				/////////////////////////////////////////////////////////////////////
+				// recv 등록
+				/////////////////////////////////////////////////////////////////////
+				RecvPost(Session[iCnt], true);
+
+				InterlockedIncrement64((LONG64 *)&_iSessionCount);
+				break;
+			}
+		}
+	}
+
+	return 0;
 }
 
 // MonitorThread
@@ -211,7 +405,53 @@ unsigned __stdcall	CLanServer::MonitorThread(LPVOID monitorArg)
 //--------------------------------------------------------------------------------
 bool	CLanServer::RecvPost(SESSION *pSession, bool bAcceptRecv = false)
 {
+	int result, iCount = 1;
+	DWORD dwRecvSize, dwflag = 0;
+	WSABUF wBuf[2];
 
+	//////////////////////////////////////////////////////////////////////////////
+	// WSABUF 등록
+	//////////////////////////////////////////////////////////////////////////////
+	wBuf[0].buf = pSession->RecvQ.GetWriteBufferPtr();
+	wBuf[0].len = pSession->RecvQ.GetNotBrokenPutSize();
+
+	//////////////////////////////////////////////////////////////////////////////
+	// 링버퍼 경계점에 왔을 때 한번 더 WSABUF등록
+	//////////////////////////////////////////////////////////////////////////////
+	if (pSession->RecvQ.GetWriteBufferPtr() == pSession->RecvQ.GetBufferPtr())
+	{
+		wBuf[1].buf = pSession->RecvQ.GetWriteBufferPtr();
+		wBuf[1].len = pSession->RecvQ.GetNotBrokenPutSize();
+		iCount++;
+	}
+
+	if (!bAcceptRecv)
+		InterlockedIncrement64((LONG64 *)&(pSession->_lIOCount));
+
+	result = WSARecv(pSession->_SessionInfo._socket, wBuf, iCount, &dwRecvSize, &dwflag, &pSession->_RecvOverlapped, NULL);
+
+	//////////////////////////////////////////////////////////////////////////////
+	// WSARecv Error
+	//////////////////////////////////////////////////////////////////////////////
+	if (result == SOCKET_ERROR)
+	{
+		int iErrorCode = GetLastError();
+		if (iErrorCode != WSA_IO_PENDING)
+		{
+			//////////////////////////////////////////////////////////////////////
+			// IO_PENDING이 아니면 진짜 에러
+			//////////////////////////////////////////////////////////////////////
+			if (iErrorCode != 10054)
+				OnError(iErrorCode, L"RecvPost Error\n");
+
+			if (0 == InterlockedDecrement64((LONG64 *)&(pSession->_lIOCount)))
+				ReleaseSession(pSession);
+
+			return false;
+		}
+	}
+
+	return true;
 }
 
 //--------------------------------------------------------------------------------
@@ -219,7 +459,63 @@ bool	CLanServer::RecvPost(SESSION *pSession, bool bAcceptRecv = false)
 //--------------------------------------------------------------------------------
 bool	CLanServer::SendPost(SESSION *pSession)
 {
+	int retval, iCount = 1;
+	DWORD dwSendSize, dwflag = 0;
+	WSABUF wBuf[2];
+	CNPacket *pPacket = NULL;
 
+	////////////////////////////////////////////////////////////////////////////////////
+	// 현재 세션이 보내기 작업 중인지 검사
+	////////////////////////////////////////////////////////////////////////////////
+	if (true == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, (LONG)true, (LONG)true))
+		return FALSE;
+
+	do
+	{
+		////////////////////////////////////////////////////////////////////////////////
+		// SendFlag -> true
+		////////////////////////////////////////////////////////////////////////////////
+		InterlockedExchange((LONG *)&pSession->_bSendFlag, (LONG)true);
+
+		//////////////////////////////////////////////////////////////////////////////
+		// WSABUF 등록
+		//////////////////////////////////////////////////////////////////////////////
+		wBuf[0].buf = pSession->SendQ.GetReadBufferPtr();
+		wBuf[0].len = pSession->SendQ.GetNotBrokenGetSize();
+
+		//////////////////////////////////////////////////////////////////////////////
+		// 링버퍼 경계점에 왔을 때 한번 더 WSABUF 등록
+		//////////////////////////////////////////////////////////////////////////////
+		if (pSession->SendQ.GetWriteBufferPtr() == pSession->SendQ.GetBufferPtr())
+		{
+			wBuf[1].buf = pSession->SendQ.GetReadBufferPtr();
+			wBuf[1].len = pSession->SendQ.GetNotBrokenGetSize();
+			iCount++;
+		}
+
+		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
+		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
+
+		//////////////////////////////////////////////////////////////////////////////
+		// WSASend Error
+		//////////////////////////////////////////////////////////////////////////////
+		if (retval == SOCKET_ERROR)
+		{
+			int iErrorCode = GetLastError();
+			if (iErrorCode != WSA_IO_PENDING)
+			{
+				if (iErrorCode != 10054)
+					OnError(iErrorCode, L"SendPost Error\n");
+
+				if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
+					ReleaseSession(pSession);
+
+				return FALSE;
+			}
+		}
+	} while (0);
+
+	return TRUE;
 }
 
 //--------------------------------------------------------------------------------

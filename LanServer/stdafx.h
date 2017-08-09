@@ -11,7 +11,10 @@
 #include <tchar.h>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#include <mstcpip.h>
 #include <process.h>
+
+#pragma comment (lib, "Ws2_32.lib")
 
 // TODO: 프로그램에 필요한 추가 헤더는 여기에서 참조합니다.
 #include "StreamQueue.h"
