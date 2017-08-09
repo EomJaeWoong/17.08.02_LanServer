@@ -33,6 +33,12 @@
     <ClInclude Include="StreamQueue.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
+    <ClInclude Include="LanServerTest.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="Config.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -48,6 +54,9 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="StreamQueue.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="LanServerTest.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

@@ -13,10 +13,14 @@
 #include <WS2tcpip.h>
 #include <mstcpip.h>
 #include <process.h>
+#include <conio.h>
 
 #pragma comment (lib, "Ws2_32.lib")
+#pragma comment (lib, "Winmm.lib")
 
 // TODO: 프로그램에 필요한 추가 헤더는 여기에서 참조합니다.
 #include "StreamQueue.h"
 #include "NPacket.h"
+#include "Config.h"
 #include "LanServer.h"
+#include "LanServerTest.h"

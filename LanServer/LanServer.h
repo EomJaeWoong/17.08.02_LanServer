@@ -115,8 +115,8 @@ private:
 	//--------------------------------------------------------------------------------
 	// Recv, Send ¿Ï·á
 	//--------------------------------------------------------------------------------
-	void			CompleteRecv(SESSION *pSession, CNPacket *pPacket);
-	void			CompleteSend(SESSION *pSession);
+	void			CompleteRecv(SESSION *pSession, DWORD dwTransferred);
+	void			CompleteSend(SESSION *pSession, DWORD dwTransferred);
 
 	//--------------------------------------------------------------------------------
 	// Disconnect, Release

@@ -1,7 +1,4 @@
-#include <Windows.h>
-#include <process.h>
-
-#include "StreamQueue.h"
+#include "stdafx.h"
 
 /////////////////////////////////////////////////////////////////////////
 // 생성자(임의 크기 지정), 파괴자.

@@ -1,10 +1,4 @@
-#include <Windows.h>
-
-#include "lib\Library.h"
-#include "MemoryPool.h"
-#include "NPacket.h"
-
-CMemoryPool<CNPacket> CNPacket::_pPacketPool(0);
+#include "stdafx.h"
 
 //////////////////////////////////////////////////////////////////////////
 // 생성자, 파괴자.
@@ -66,23 +60,26 @@ void	CNPacket::Initial(int iBufferSize)
 {
 	InitializeSRWLock(&srwPacketLock);
 
+	//////////////////////////////////////////////////////////////////////
+	// 버퍼 동적 할당
+	//////////////////////////////////////////////////////////////////////
 	m_chpBuffer = new BYTE[iBufferSize];
 	m_iBufferSize = iBufferSize;
 
-	m_chpReadPos = m_chpBuffer;
-	m_chpWritePos = m_chpBuffer;
+	//////////////////////////////////////////////////////////////////////
+	// 버퍼 데이터부분 지정
+	//////////////////////////////////////////////////////////////////////
+	m_chpDataFieldStart = m_chpBuffer + 5;
+	m_chpDataFieldEnd = m_chpBuffer + 5;
 
-	m_chpDataFieldStart = m_chpBuffer;
-	m_chpDataFieldEnd = m_chpBuffer;
+	m_chpReadPos = m_chpDataFieldStart;
+	m_chpWritePos = m_chpDataFieldStart;
+
+	m_chpBufferExpansion = m_chpBuffer;
 
 	m_iDataSize = 0;
 
 	_iRefCnt = 0;
-
-	iUsedSession = 0;
-
-	iAddress = 0;
-	bUse = false;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -106,11 +103,10 @@ void	CNPacket::Release(void)
 //////////////////////////////////////////////////////////////////////////
 void	CNPacket::Clear(void)
 {
-	m_chpReadPos = m_chpBuffer;
-	m_chpWritePos = m_chpBuffer;
+	m_chpReadPos = m_chpDataFieldStart;
+	m_chpWritePos = m_chpDataFieldStart;
 
-	m_chpDataFieldStart = m_chpBuffer;
-	m_chpDataFieldEnd = m_chpBuffer;
+	m_chpDataFieldEnd = m_chpDataFieldStart;
 
 	m_iDataSize = 0;
 }
@@ -124,6 +120,12 @@ void	CNPacket::Clear(void)
 //////////////////////////////////////////////////////////////////////////
 int		CNPacket::MoveWritePos(int iSize)
 {
+	//////////////////////////////////////////////////////////////////////
+	// 이동 시 버퍼크기 보다 커질 경우
+	//////////////////////////////////////////////////////////////////////
+	if (m_chpWritePos - m_chpDataFieldStart + iSize > m_iBufferSize)
+		return 0;
+
 	m_chpWritePos += iSize;
 
 	return iSize;
@@ -131,24 +133,16 @@ int		CNPacket::MoveWritePos(int iSize)
 
 int		CNPacket::MoveReadPos(int iSize)
 {
+	//////////////////////////////////////////////////////////////////////
+	// 이동 시 ReadPos보다 커질 경우
+	//////////////////////////////////////////////////////////////////////
+	if (m_chpReadPos + iSize > m_chpWritePos)
+		return 0;
+
 	m_chpReadPos += iSize;
 
 	return iSize;
 }
-
-//////////////////////////////////////////////////////////////////////////
-// 패킷 헤더 셋팅
-//
-// Parameters: (unsigned char *)Src 포인터. (int)SrcSize.
-// Return: (int)복사한 사이즈.
-//////////////////////////////////////////////////////////////////////////
-void		CNPacket::SetHeader(int iHeaderSize)
-{
-	m_chpDataFieldStart += iHeaderSize;
-	m_chpDataFieldEnd += iHeaderSize;
-}
-
-
 
 /* ============================================================================= */
 // 연산자 오퍼레이터.
@@ -361,6 +355,44 @@ int		CNPacket::PutData(unsigned char *bypSrc, int iSrcSize)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// 패킷 헤더 셋팅
+//
+// Parameters: (unsigned char *)Src 포인터. (int)SrcSize.
+// Return: (int)복사한 사이즈.
+//////////////////////////////////////////////////////////////////////////
+void		CNPacket::SetHeader(char *pHeader)
+{
+	memcpy(m_chpBufferExpansion, pHeader, 5);
+	m_iDataSize += 5;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// 패킷 헤더 셋팅(Custom)
+//
+// Parameters: (char *) 넣을 헤더, (int) 헤더 사이즈
+// Return: 없음.
+//////////////////////////////////////////////////////////////////////////
+void	CNPacket::SetCustomHeader(char *pHeader, int iCustomHeaderSize)
+{
+	m_chpBufferExpansion = m_chpBuffer + 5 - iCustomHeaderSize;
+	memcpy(m_chpBufferExpansion, pHeader, iCustomHeaderSize);
+	m_iDataSize += iCustomHeaderSize;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// 패킷 헤더 셋팅(2byte Echo 전용)
+//
+// Parameters: (unsigned short) 넣을 헤더.
+// Return: 없음.
+//////////////////////////////////////////////////////////////////////////
+void	CNPacket::SetCustomShortHeader(unsigned short Header)
+{
+	m_chpBufferExpansion += 3;
+	*((unsigned short *)m_chpBufferExpansion) = Header;
+	m_iDataSize += 2;
+}
+
+//////////////////////////////////////////////////////////////////////////
 // 패킷 메모리 할당.
 //
 // Parameters: 없음.
@@ -368,9 +400,9 @@ int		CNPacket::PutData(unsigned char *bypSrc, int iSrcSize)
 //////////////////////////////////////////////////////////////////////////
 CNPacket *CNPacket::Alloc()
 {
-	CNPacket *pPacket = _pPacketPool.Alloc();
+	CNPacket *pPacket = new CNPacket;
 
-	new (pPacket)CNPacket;
+	//new (pPacket)CNPacket;
 
 	pPacket->addRef();
 	pPacket->Clear();
@@ -390,12 +422,11 @@ void CNPacket::Free()
 	int retval = InterlockedDecrement64((LONG64 *)&_iRefCnt);
 	if (0 == retval)
 	{
-		this->~CNPacket();
-		_pPacketPool.Free(this);
+		delete this;
 	}
 
-	else if (retval < 0)
-		CCrashDump::Crash();
+	//else if (retval < 0)
+		//CCrashDump::Crash();
 }
 
 
