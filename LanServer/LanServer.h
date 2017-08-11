@@ -10,7 +10,7 @@ enum
 	MAX_SESSION = 200,
 
 	// WSABUF °¹¼ö
-	MAX_WSABUF = 100
+	MAX_WSABUF = 200
 };
 
 //-------------------------------------------------------------------------------------
@@ -40,6 +40,8 @@ typedef struct stSESSION
 
 	BOOL _bSendFlag;
 	LONG _lIOCount;
+
+	int _iSendPacketCnt;
 } SESSION;
 
 

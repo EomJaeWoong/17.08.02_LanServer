@@ -164,8 +164,12 @@ bool	CLanServer::SendPacket(__int64 iSessionID, CNPacket *pPacket)
 	{
 		if (Session[iCnt]->_iSessionID == iSessionID)
 		{
-			//pPacket->addRef();
-			Session[iCnt]->SendQ.Put((char *)pPacket->GetHeaderBufferPtr(), pPacket->GetDataSize());
+			pPacket->addRef();
+
+			Session[iCnt]->SendQ.Lock();
+			Session[iCnt]->SendQ.Put((char *)&pPacket, sizeof(pPacket));
+			Session[iCnt]->SendQ.Unlock();
+
 			InterlockedIncrement64((LONG64 *)&_SendPacketCounter);
 			SendPost(Session[iCnt]);
 			break;
@@ -351,6 +355,8 @@ int		CLanServer::AcceptThread_Update()
 				Session[iCnt]->_bSendFlag = FALSE;
 				Session[iCnt]->_lIOCount = 0;
 
+				Session[iCnt]->_iSendPacketCnt = 0;
+
 				/////////////////////////////////////////////////////////////////////
 				// IOCP 등록
 				/////////////////////////////////////////////////////////////////////
@@ -478,42 +484,51 @@ bool	CLanServer::RecvPost(SESSION *pSession, bool bAcceptRecv)
 //--------------------------------------------------------------------------------
 bool	CLanServer::SendPost(SESSION *pSession)
 {
-	int retval, iCount = 1;
+	int retval, iCount = 0;
 	DWORD dwSendSize, dwflag = 0;
-	WSABUF wBuf[2];
+	WSABUF wBuf[MAX_WSABUF];
 	CNPacket *pPacket = NULL;
 
 	////////////////////////////////////////////////////////////////////////////////////
 	// 현재 세션이 보내기 작업 중인지 검사
+	// Flag value가 true  => 보내는 중
+	//              false => 안보내는 중 -> 보내는 중으로 바꾼다
 	////////////////////////////////////////////////////////////////////////////////////
-	if (true == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, (LONG)true, (LONG)true))
-		return FALSE;
+	if (true == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, (LONG)true, (LONG)false))
+		return false;
 
 	do
 	{
-		////////////////////////////////////////////////////////////////////////////////
-		// SendFlag -> true
-		////////////////////////////////////////////////////////////////////////////////
-		InterlockedExchange((LONG *)&pSession->_bSendFlag, (LONG)true);
+		if (pSession->SendQ.GetUseSize() == 0)
+		{
+			////////////////////////////////////////////////////////////////////////////////
+			// SendFlag -> false
+			////////////////////////////////////////////////////////////////////////////////
+			InterlockedExchange((LONG *)&pSession->_bSendFlag, (LONG)false);
+			break;
+		}
 
+		pSession->SendQ.Lock();
 		//////////////////////////////////////////////////////////////////////////////
 		// WSABUF 등록
 		//////////////////////////////////////////////////////////////////////////////
-		wBuf[0].buf = pSession->SendQ.GetReadBufferPtr();
-		wBuf[0].len = pSession->SendQ.GetNotBrokenGetSize();
-
-		//////////////////////////////////////////////////////////////////////////////
-		// 링버퍼 경계점에 왔을 때 한번 더 WSABUF 등록
-		//////////////////////////////////////////////////////////////////////////////
-		if (pSession->SendQ.GetUseSize() > pSession->SendQ.GetNotBrokenGetSize())
+		while (pSession->SendQ.GetUseSize() / sizeof(char *) > pSession->_iSendPacketCnt)
 		{
-			wBuf[1].buf = pSession->SendQ.GetReadBufferPtr();
-			wBuf[1].len = pSession->SendQ.GetNotBrokenGetSize();
+			if (iCount >= MAX_WSABUF)
+				break;
+
+			pSession->SendQ.Peek((char *)&pPacket, pSession->_iSendPacketCnt * sizeof(char *), sizeof(char *));
+
+			wBuf[iCount].buf = (char *)pPacket->GetHeaderBufferPtr();
+			wBuf[iCount].len = pPacket->GetPacketSize();
+
 			iCount++;
+			InterlockedIncrement64((LONG64 *)&pSession->_iSendPacketCnt);
 		}
 
 		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
 		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
+		pSession->SendQ.Unlock();
 
 		//////////////////////////////////////////////////////////////////////////////
 		// WSASend Error
@@ -587,10 +602,21 @@ void	CLanServer::CompleteRecv(SESSION *pSession, DWORD dwTransferred)
 
 void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 {
+	CNPacket *pPacket = NULL;
+
 	//////////////////////////////////////////////////////////////////////////////
 	// 보냈던 데이터 제거
 	//////////////////////////////////////////////////////////////////////////////
-	pSession->SendQ.RemoveData(dwTransferred);
+	pSession->SendQ.Lock();
+	while (pSession->_iSendPacketCnt != 0)
+	{
+		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
+		pPacket->Free();
+
+		InterlockedDecrement64((LONG64 *)&pSession->_iSendPacketCnt);
+	}
+
+	pSession->SendQ.Unlock();
 
 	//////////////////////////////////////////////////////////////////////////////
 	// SendFlag => false
@@ -600,7 +626,7 @@ void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 	//////////////////////////////////////////////////////////////////////////////
 	// 못보낸게 있으면 다시 Send하도록 등록 함
 	//////////////////////////////////////////////////////////////////////////////
-	if (pSession->SendQ.GetUseSize() > 0)
+	//if (pSession->SendQ.GetUseSize() > 0)
 	SendPost(pSession);
 }
 
