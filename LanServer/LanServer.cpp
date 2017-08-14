@@ -166,10 +166,7 @@ bool	CLanServer::SendPacket(__int64 iSessionID, CNPacket *pPacket)
 		{
 			pPacket->addRef();
 
-			Session[iCnt]->SendQ.Lock();
 			Session[iCnt]->SendQ.Put((char *)&pPacket, sizeof(pPacket));
-			Session[iCnt]->SendQ.Unlock();
-
 			InterlockedIncrement64((LONG64 *)&_SendPacketCounter);
 			SendPost(Session[iCnt]);
 			break;
@@ -494,7 +491,7 @@ bool	CLanServer::SendPost(SESSION *pSession)
 	// Flag value가 true  => 보내는 중
 	//              false => 안보내는 중 -> 보내는 중으로 바꾼다
 	////////////////////////////////////////////////////////////////////////////////////
-	if (true == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, (LONG)true, (LONG)false))
+	if (true == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, true, false))
 		return false;
 
 	do
@@ -504,31 +501,33 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			////////////////////////////////////////////////////////////////////////////////
 			// SendFlag -> false
 			////////////////////////////////////////////////////////////////////////////////
-			InterlockedExchange((LONG *)&pSession->_bSendFlag, (LONG)false);
+			InterlockedExchange((LONG *)&pSession->_bSendFlag, false);
 			break;
 		}
 
-		pSession->SendQ.Lock();
+		//pSession->SendQ.Lock();
 		//////////////////////////////////////////////////////////////////////////////
 		// WSABUF 등록
 		//////////////////////////////////////////////////////////////////////////////
-		while (pSession->SendQ.GetUseSize() / sizeof(char *) > pSession->_iSendPacketCnt)
+		int QueueSize = pSession->SendQ.GetUseSize() / sizeof(char *);
+		while (QueueSize > iCount)
 		{
 			if (iCount >= MAX_WSABUF)
 				break;
 
-			pSession->SendQ.Peek((char *)&pPacket, pSession->_iSendPacketCnt * sizeof(char *), sizeof(char *));
+			pSession->SendQ.Peek((char *)&pPacket, sizeof(char *));
 
 			wBuf[iCount].buf = (char *)pPacket->GetHeaderBufferPtr();
 			wBuf[iCount].len = pPacket->GetPacketSize();
 
 			iCount++;
-			InterlockedIncrement64((LONG64 *)&pSession->_iSendPacketCnt);
 		}
+
+		InterlockedAdd64((LONG64 *)&pSession->_iSendPacketCnt, (LONG64)iCount);
 
 		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
 		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
-		pSession->SendQ.Unlock();
+		//pSession->SendQ.Unlock();
 
 		//////////////////////////////////////////////////////////////////////////////
 		// WSASend Error
@@ -538,7 +537,7 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			int iErrorCode = GetLastError();
 			if (iErrorCode != WSA_IO_PENDING)
 			{
-				if (iErrorCode != 10054)
+				//if (iErrorCode != 10054)
 					OnError(iErrorCode, L"SendPost Error\n");
 
 				if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
@@ -607,7 +606,14 @@ void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 	//////////////////////////////////////////////////////////////////////////////
 	// 보냈던 데이터 제거
 	//////////////////////////////////////////////////////////////////////////////
-	pSession->SendQ.Lock();
+	//pSession->SendQ.Lock();
+	for (int iCnt = 0; iCnt < pSession->_iSendPacketCnt; iCnt++)
+	{
+		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
+		pPacket->Free();
+	}
+	InterlockedExchange64((LONG64 *)&pSession->_iSendPacketCnt, (LONG64)0);
+	/*
 	while (pSession->_iSendPacketCnt != 0)
 	{
 		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
@@ -615,18 +621,18 @@ void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 
 		InterlockedDecrement64((LONG64 *)&pSession->_iSendPacketCnt);
 	}
-
-	pSession->SendQ.Unlock();
+	*/
+	//pSession->SendQ.Unlock();
 
 	//////////////////////////////////////////////////////////////////////////////
 	// SendFlag => false
 	//////////////////////////////////////////////////////////////////////////////
-	InterlockedExchange((LONG *)&pSession->_bSendFlag, (LONG)false);
+	if (false == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, false, true))
+		OnError(3, L"SendFlag Error");
 
 	//////////////////////////////////////////////////////////////////////////////
 	// 못보낸게 있으면 다시 Send하도록 등록 함
 	//////////////////////////////////////////////////////////////////////////////
-	//if (pSession->SendQ.GetUseSize() > 0)
 	SendPost(pSession);
 }
 

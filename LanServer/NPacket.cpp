@@ -400,7 +400,7 @@ void	CNPacket::SetCustomShortHeader(unsigned short Header)
 //////////////////////////////////////////////////////////////////////////
 CNPacket *CNPacket::Alloc()
 {
-	CNPacket *pPacket = new CNPacket;
+	CNPacket *pPacket = new CNPacket();
 
 	//new (pPacket)CNPacket;
 
