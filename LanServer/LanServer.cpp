@@ -509,13 +509,13 @@ bool	CLanServer::SendPost(SESSION *pSession)
 		//////////////////////////////////////////////////////////////////////////////
 		// WSABUF µî·Ï
 		//////////////////////////////////////////////////////////////////////////////
-		int QueueSize = pSession->SendQ.GetUseSize() / sizeof(char *);
+		int QueueSize = (pSession->SendQ.GetUseSize() / sizeof(char *)) - pSession->_iSendPacketCnt;
 		while (QueueSize > iCount)
 		{
 			if (iCount >= MAX_WSABUF)
 				break;
 
-			pSession->SendQ.Peek((char *)&pPacket, sizeof(char *));
+			pSession->SendQ.Peek((char *)&pPacket, (pSession->_iSendPacketCnt + iCount) * sizeof(char *), sizeof(char *));
 
 			wBuf[iCount].buf = (char *)pPacket->GetHeaderBufferPtr();
 			wBuf[iCount].len = pPacket->GetPacketSize();
@@ -523,7 +523,7 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			iCount++;
 		}
 
-		InterlockedAdd64((LONG64 *)&pSession->_iSendPacketCnt, (LONG64)iCount);
+		InterlockedAdd((LONG *)&pSession->_iSendPacketCnt, (LONG)iCount);
 
 		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
 		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
