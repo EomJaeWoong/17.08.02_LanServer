@@ -178,30 +178,29 @@ int	CAyaStreamSQ::Peek(char *chpDest, int iSize)
 /////////////////////////////////////////////////////////////////////////
 int	CAyaStreamSQ::Peek(char *chpDest, int iIndex, int iSize)
 {
+	int iCnt;
 	int iPeekPos = (m_iReadPos + iIndex) % m_iBufferSize;
 
 	if (GetUseSize() < iSize)
 		iSize = GetUseSize();
 
-	if (GetNotBrokenGetSize() < iSize && m_iWritePos < m_iReadPos)
+	if (GetNotBrokenGetSize() < iSize && m_iWritePos < iPeekPos)
 	{
-		int iCnt, iTailSize, iTailCnt = 0;
+		int iCnt, iTailCnt = 0;
 
-		for (iCnt = 0; iCnt < m_iBufferSize; iCnt++)
+		for (iCnt = 0; iCnt < GetNotBrokenGetSize(); iCnt++)
 			chpDest[iCnt] = m_chpBuffer[iPeekPos + iCnt];
 
-		iTailSize = iSize - iCnt;
-
-		for (; iCnt < iTailSize; iCnt++)
+		for (; iCnt < iSize; iCnt++)
 			chpDest[iCnt] = m_chpBuffer[iTailCnt++];
 	}
 
-	for (int iCnt = 0; iCnt < iSize; iCnt++)
+	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
 		chpDest[iCnt] = m_chpBuffer[iPeekPos + iCnt];
 	}
 
-	return iSize;
+	return iCnt;
 }
 
 

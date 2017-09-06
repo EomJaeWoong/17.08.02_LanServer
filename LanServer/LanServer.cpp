@@ -496,7 +496,9 @@ bool	CLanServer::SendPost(SESSION *pSession)
 
 	do
 	{
-		if (pSession->SendQ.GetUseSize() == 0)
+		int QueueSize = pSession->SendQ.GetUseSize() / 8;
+
+		if (QueueSize == 0)
 		{
 			////////////////////////////////////////////////////////////////////////////////
 			// SendFlag -> false
@@ -505,12 +507,13 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			break;
 		}
 
-		//pSession->SendQ.Lock();
+		if (pSession->_Debug == 2)
+			pSession->_Debug = 1;
+
 		//////////////////////////////////////////////////////////////////////////////
 		// WSABUF 등록
 		//////////////////////////////////////////////////////////////////////////////
-		int QueueSize = (pSession->SendQ.GetUseSize() / sizeof(char *)) - pSession->_iSendPacketCnt;
-		while (QueueSize > iCount)
+		for (iCount = 0; iCount< QueueSize; iCount++)
 		{
 			if (iCount >= MAX_WSABUF)
 				break;
@@ -520,14 +523,13 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			wBuf[iCount].buf = (char *)pPacket->GetHeaderBufferPtr();
 			wBuf[iCount].len = pPacket->GetPacketSize();
 
-			iCount++;
+			pPacket = NULL;
 		}
 
-		InterlockedAdd((LONG *)&pSession->_iSendPacketCnt, (LONG)iCount);
+		pSession->_iSendPacketCnt += iCount;
 
 		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
 		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
-		//pSession->SendQ.Unlock();
 
 		//////////////////////////////////////////////////////////////////////////////
 		// WSASend Error
@@ -602,33 +604,26 @@ void	CLanServer::CompleteRecv(SESSION *pSession, DWORD dwTransferred)
 void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 {
 	CNPacket *pPacket = NULL;
+	int iCnt;
 
 	//////////////////////////////////////////////////////////////////////////////
 	// 보냈던 데이터 제거
 	//////////////////////////////////////////////////////////////////////////////
-	//pSession->SendQ.Lock();
-	for (int iCnt = 0; iCnt < pSession->_iSendPacketCnt; iCnt++)
+	for (iCnt = 0; iCnt < pSession->_iSendPacketCnt; iCnt++)
 	{
 		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
 		pPacket->Free();
 	}
-	InterlockedExchange64((LONG64 *)&pSession->_iSendPacketCnt, (LONG64)0);
-	/*
-	while (pSession->_iSendPacketCnt != 0)
-	{
-		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
-		pPacket->Free();
 
-		InterlockedDecrement64((LONG64 *)&pSession->_iSendPacketCnt);
-	}
-	*/
-	//pSession->SendQ.Unlock();
+	pSession->_iSendPacketCnt -= iCnt;
 
 	//////////////////////////////////////////////////////////////////////////////
 	// SendFlag => false
 	//////////////////////////////////////////////////////////////////////////////
 	if (false == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, false, true))
 		OnError(3, L"SendFlag Error");
+
+	pSession->_Debug = 2;
 
 	//////////////////////////////////////////////////////////////////////////////
 	// 못보낸게 있으면 다시 Send하도록 등록 함
