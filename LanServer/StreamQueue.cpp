@@ -72,9 +72,9 @@ int	CAyaStreamSQ::GetUseSize(void)
 int	CAyaStreamSQ::GetFreeSize(void)
 {
 	if (m_iReadPos > m_iWritePos)
-		return m_iReadPos - m_iWritePos - 1;
+		return m_iReadPos - m_iWritePos - eBUFFER_BLANK;
 	else
-		return GetBufferSize() - m_iWritePos + m_iReadPos - 1;
+		return GetBufferSize() - m_iWritePos + m_iReadPos - eBUFFER_BLANK;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -95,9 +95,14 @@ int	CAyaStreamSQ::GetNotBrokenGetSize(void)
 int	CAyaStreamSQ::GetNotBrokenPutSize(void)
 {
 	if (m_iWritePos < m_iReadPos)
-		return m_iReadPos - m_iWritePos;
+		return GetFreeSize();
 	else
-		return GetBufferSize() - m_iWritePos;
+	{
+		if (m_iReadPos < eBUFFER_BLANK)
+			return GetBufferSize() - m_iWritePos - (eBUFFER_BLANK - m_iReadPos);
+		else
+			return GetBufferSize() - m_iWritePos;
+	}
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -111,8 +116,8 @@ int	CAyaStreamSQ::Put(char *chpData, int iSize)
 	if (GetFreeSize() < iSize)
 		iSize = GetFreeSize();
 
-	if (GetNotBrokenPutSize() < iSize && m_iWritePos < m_iReadPos)
-		iSize = GetNotBrokenPutSize() + m_iReadPos;
+	if (GetNotBrokenPutSize() < iSize && m_iWritePos > m_iReadPos)
+		iSize = GetNotBrokenPutSize() + m_iReadPos - eBUFFER_BLANK;
 
 	for (int iCnt = 0; iCnt < iSize; iCnt++)
 	{
@@ -135,7 +140,7 @@ int	CAyaStreamSQ::Get(char *chpDest, int iSize)
 		iSize = GetUseSize();
 
 	if (GetNotBrokenGetSize() < iSize && m_iWritePos < m_iReadPos)
-		iSize = GetNotBrokenGetSize() + m_iWritePos - 1;
+		iSize = GetNotBrokenGetSize() + m_iWritePos;
 
 	for (int iCnt = 0; iCnt < iSize; iCnt++)
 	{
@@ -160,11 +165,11 @@ int	CAyaStreamSQ::Peek(char *chpDest, int iSize)
 		iSize = GetUseSize();
 
 	if (GetNotBrokenGetSize() < iSize && m_iWritePos < m_iReadPos)
-		iSize = GetNotBrokenGetSize() + m_iWritePos - 1;
+		iSize = GetNotBrokenGetSize() + m_iWritePos;
 
 	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
-		chpDest[iCnt] = m_chpBuffer[m_iReadPos + iCnt];
+		chpDest[iCnt] = m_chpBuffer[(m_iReadPos + iCnt) % m_iBufferSize];
 	}
 
 	return iCnt;
@@ -179,25 +184,22 @@ int	CAyaStreamSQ::Peek(char *chpDest, int iSize)
 int	CAyaStreamSQ::Peek(char *chpDest, int iIndex, int iSize)
 {
 	int iCnt;
+
+	// PeekPos 위치가 Queue의 데이터 범위를 벗어날 때
+	if (GetUseSize() < iIndex)
+		return 0;
+
 	int iPeekPos = (m_iReadPos + iIndex) % m_iBufferSize;
 
 	if (GetUseSize() < iSize)
 		iSize = GetUseSize();
 
-	if (GetNotBrokenGetSize() < iSize && m_iWritePos < iPeekPos)
-	{
-		int iCnt, iTailCnt = 0;
-
-		for (iCnt = 0; iCnt < GetNotBrokenGetSize(); iCnt++)
-			chpDest[iCnt] = m_chpBuffer[iPeekPos + iCnt];
-
-		for (; iCnt < iSize; iCnt++)
-			chpDest[iCnt] = m_chpBuffer[iTailCnt++];
-	}
+	if (m_iBufferSize - iPeekPos < iSize && m_iWritePos < iPeekPos)
+		iSize = m_iBufferSize - iPeekPos + m_iWritePos;
 
 	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
-		chpDest[iCnt] = m_chpBuffer[iPeekPos + iCnt];
+		chpDest[iCnt] = m_chpBuffer[(iPeekPos + iCnt) % m_iBufferSize];
 	}
 
 	return iCnt;

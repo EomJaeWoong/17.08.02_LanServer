@@ -39,6 +39,21 @@
     <ClInclude Include="Config.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
+    <ClInclude Include="lib\APIHook.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\CrashDump.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\Library.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\Profiler.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="lib\SystemLog.h">
+      <Filter>소스 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -57,6 +72,18 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="LanServerTest.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\APIHook.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\Profiler.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\SystemLog.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="lib\CrashDump.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

@@ -5,6 +5,10 @@
 //---------------------------------------------------------------------------------
 CLanServer::CLanServer()
 {
+	CCrashDump::CCrashDump();
+	
+	LOG_SET(LOG::FILE, LOG::LEVEL_DEBUG);
+
 	///////////////////////////////////////////////////////////////////////////////
 	// 빈 세션 생성
 	///////////////////////////////////////////////////////////////////////////////
@@ -35,7 +39,7 @@ CLanServer::CLanServer()
 	}
 
 	if (!CNPacket::_ValueSizeCheck())
-		// 여기도 크래쉬?
+		CCrashDump::Crash();
 
 	///////////////////////////////////////////////////////////////////////////////
 	// LanServer 변수 설정
@@ -227,7 +231,7 @@ int		CLanServer::WorkerThread_Update()
 		{
 			if (pOverlapped == &(pSession->_RecvOverlapped))
 			{
-				int i = 0;
+				result = GetLastError();
 			}
 
 			else if (pOverlapped == &(pSession->_SendOverlapped))
@@ -263,7 +267,7 @@ int		CLanServer::WorkerThread_Update()
 
 		//Count가 0보다 작으면 크래쉬 내기
 		else if (0 > pSession->_lIOCount)
-			// 크래쉬!
+			CCrashDump::Crash();
 
 		OnWorkerThreadEnd();
 	}
@@ -298,7 +302,7 @@ int		CLanServer::AcceptThread_Update()
 		// Session수가 꽉 찼을 때
 		//////////////////////////////////////////////////////////////////////////////
 		if (_iSessionCount >= MAX_SESSION)
-			OnError(1, L"Session is Maximun!");
+			OnError(dfMAX_SESSION, L"Session is Maximun!");
 
 		//////////////////////////////////////////////////////////////////////////////
 		// Request 요청
@@ -331,7 +335,7 @@ int		CLanServer::AcceptThread_Update()
 				tcp_keepalive tcpkl;
 
 				tcpkl.onoff = 1;
-				tcpkl.keepalivetime = 3000; //30초 개발할땐 짧게 라이브땐 2~30초
+				tcpkl.keepalivetime = 3000;		//30초 개발할땐 짧게 라이브땐 2~30초
 				tcpkl.keepaliveinterval = 2000; //  keepalive 신호
 
 				DWORD dwReturnByte;
@@ -507,13 +511,10 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			break;
 		}
 
-		if (pSession->_Debug == 2)
-			pSession->_Debug = 1;
-
 		//////////////////////////////////////////////////////////////////////////////
 		// WSABUF 등록
 		//////////////////////////////////////////////////////////////////////////////
-		for (iCount = 0; iCount< QueueSize; iCount++)
+		for (iCount = 0; iCount < QueueSize; iCount++)
 		{
 			if (iCount >= MAX_WSABUF)
 				break;
@@ -539,7 +540,7 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			int iErrorCode = GetLastError();
 			if (iErrorCode != WSA_IO_PENDING)
 			{
-				//if (iErrorCode != 10054)
+				if (iErrorCode != 10054)
 					OnError(iErrorCode, L"SendPost Error\n");
 
 				if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
@@ -621,9 +622,7 @@ void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 	// SendFlag => false
 	//////////////////////////////////////////////////////////////////////////////
 	if (false == InterlockedCompareExchange((LONG *)&pSession->_bSendFlag, false, true))
-		OnError(3, L"SendFlag Error");
-
-	pSession->_Debug = 2;
+		OnError(dfFLAG_ERROR, L"SendFlag Error");
 
 	//////////////////////////////////////////////////////////////////////////////
 	// 못보낸게 있으면 다시 Send하도록 등록 함

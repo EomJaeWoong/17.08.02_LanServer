@@ -35,8 +35,8 @@ public:
 	----------------------------------------------------------------*/
 	enum e_AYA_STREAM_SQ
 	{
-		eBUFFER_DEFAULT				= 50000,		// 버퍼의 기본 크기.
-		eBUFFER_BLANK				= 1			 	// 확실한 구분을 위해 8Byte 의 빈공간.
+		eBUFFER_DEFAULT				= 20960,		// 버퍼의 기본 크기.
+		eBUFFER_BLANK				= 8			 	// 확실한 구분을 위해 8Byte 의 빈공간.
 
 	};
 
@@ -123,7 +123,7 @@ public:
 	// Parameters: (char *)데이타 포인터. (int)시작인덱스. (int)크기.
 	// Return: (int)가져온 크기.
 	/////////////////////////////////////////////////////////////////////////
-	int	Peek(char *chpDest, int iIndex, int iSize);
+	int		Peek(char *chpDest, int iIndex, int iSize);
 
 
 
@@ -141,7 +141,7 @@ public:
 	// Parameters: 없음.
 	// Return: (int)Write 이동 사이즈
 	/////////////////////////////////////////////////////////////////////////
-	int	MoveWritePos(int iSize);
+	int		MoveWritePos(int iSize);
 
 
 	/////////////////////////////////////////////////////////////////////////

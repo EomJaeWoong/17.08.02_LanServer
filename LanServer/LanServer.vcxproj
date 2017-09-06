@@ -131,6 +131,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalIncludeDirectories>.\;</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -146,6 +147,11 @@
     <ClInclude Include="Config.h" />
     <ClInclude Include="LanServer.h" />
     <ClInclude Include="LanServerTest.h" />
+    <ClInclude Include="lib\APIHook.h" />
+    <ClInclude Include="lib\CrashDump.h" />
+    <ClInclude Include="lib\Library.h" />
+    <ClInclude Include="lib\Profiler.h" />
+    <ClInclude Include="lib\SystemLog.h" />
     <ClInclude Include="NPacket.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="StreamQueue.h" />
@@ -154,6 +160,10 @@
   <ItemGroup>
     <ClCompile Include="LanServer.cpp" />
     <ClCompile Include="LanServerTest.cpp" />
+    <ClCompile Include="lib\APIHook.cpp" />
+    <ClCompile Include="lib\CrashDump.cpp" />
+    <ClCompile Include="lib\Profiler.cpp" />
+    <ClCompile Include="lib\SystemLog.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="NPacket.cpp" />
     <ClCompile Include="stdafx.cpp">
