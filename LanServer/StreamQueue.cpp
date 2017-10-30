@@ -113,19 +113,22 @@ int	CAyaStreamSQ::GetNotBrokenPutSize(void)
 /////////////////////////////////////////////////////////////////////////
 int	CAyaStreamSQ::Put(char *chpData, int iSize)
 {
+	int iCnt;
+	int wonleSize = iSize;
+
 	if (GetFreeSize() < iSize)
 		iSize = GetFreeSize();
 
-	if (GetNotBrokenPutSize() < iSize && m_iWritePos > m_iReadPos)
-		iSize = GetNotBrokenPutSize() + m_iReadPos - eBUFFER_BLANK;
-
-	for (int iCnt = 0; iCnt < iSize; iCnt++)
+	if (GetNotBrokenPutSize() < iSize)
+		iSize = GetNotBrokenPutSize();
+	
+	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
 		m_chpBuffer[m_iWritePos++] = chpData[iCnt];
 		if (m_iWritePos == m_iBufferSize)	m_iWritePos = 0;
 	}
 	
-	return iSize;
+	return iCnt;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -136,19 +139,22 @@ int	CAyaStreamSQ::Put(char *chpData, int iSize)
 /////////////////////////////////////////////////////////////////////////
 int	CAyaStreamSQ::Get(char *chpDest, int iSize)
 {
+	int iCnt;
+	int wonleSize = iSize;
+
 	if (GetUseSize() < iSize)
 		iSize = GetUseSize();
 
-	if (GetNotBrokenGetSize() < iSize && m_iWritePos < m_iReadPos)
-		iSize = GetNotBrokenGetSize() + m_iWritePos;
-
-	for (int iCnt = 0; iCnt < iSize; iCnt++)
+	if (GetNotBrokenGetSize() < iSize)
+		iSize = GetNotBrokenGetSize();
+	
+	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
 		chpDest[iCnt] = m_chpBuffer[m_iReadPos++];
 		if (m_iReadPos == m_iBufferSize)	m_iReadPos = 0;
 	}
 	
-	return iSize;
+	return iCnt;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -164,8 +170,8 @@ int	CAyaStreamSQ::Peek(char *chpDest, int iSize)
 	if (GetUseSize() < iSize)
 		iSize = GetUseSize();
 
-	if (GetNotBrokenGetSize() < iSize && m_iWritePos < m_iReadPos)
-		iSize = GetNotBrokenGetSize() + m_iWritePos;
+	if (GetNotBrokenGetSize() < iSize)
+		iSize = GetNotBrokenGetSize();
 
 	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
@@ -194,9 +200,9 @@ int	CAyaStreamSQ::Peek(char *chpDest, int iIndex, int iSize)
 	if (GetUseSize() < iSize)
 		iSize = GetUseSize();
 
-	if (m_iBufferSize - iPeekPos < iSize && m_iWritePos < iPeekPos)
-		iSize = m_iBufferSize - iPeekPos + m_iWritePos;
-
+	if (m_iBufferSize - iPeekPos < iSize)
+		iSize = m_iBufferSize - iPeekPos;
+	
 	for (iCnt = 0; iCnt < iSize; iCnt++)
 	{
 		chpDest[iCnt] = m_chpBuffer[(iPeekPos + iCnt) % m_iBufferSize];

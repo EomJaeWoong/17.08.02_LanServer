@@ -47,7 +47,7 @@ typedef struct stSESSION
 	BOOL _bSendFlag;
 	LONG _lIOCount;
 
-	int _iSendPacketCnt;
+	LONG _iSendPacketCnt;
 
 	LONG _Debug;
 } SESSION;

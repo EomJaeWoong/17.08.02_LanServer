@@ -170,7 +170,8 @@ bool	CLanServer::SendPacket(__int64 iSessionID, CNPacket *pPacket)
 		{
 			pPacket->addRef();
 
-			Session[iCnt]->SendQ.Put((char *)&pPacket, sizeof(pPacket));
+			Session[iCnt]->SendQ.Put((char *)&pPacket, 8);
+
 			InterlockedIncrement64((LONG64 *)&_SendPacketCounter);
 			SendPost(Session[iCnt]);
 			break;
@@ -519,15 +520,13 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			if (iCount >= MAX_WSABUF)
 				break;
 
-			pSession->SendQ.Peek((char *)&pPacket, (pSession->_iSendPacketCnt + iCount) * sizeof(char *), sizeof(char *));
+			pSession->SendQ.Peek((char *)&pPacket, iCount * 8, 8);
 
 			wBuf[iCount].buf = (char *)pPacket->GetHeaderBufferPtr();
 			wBuf[iCount].len = pPacket->GetPacketSize();
 
-			pPacket = NULL;
+			InterlockedIncrement((LONG*)&pSession->_iSendPacketCnt);
 		}
-
-		pSession->_iSendPacketCnt += iCount;
 
 		InterlockedIncrement64((LONG64 *)&pSession->_lIOCount);
 		retval = WSASend(pSession->_SessionInfo._socket, wBuf, iCount, &dwSendSize, dwflag, &pSession->_SendOverlapped, NULL);
@@ -541,7 +540,8 @@ bool	CLanServer::SendPost(SESSION *pSession)
 			if (iErrorCode != WSA_IO_PENDING)
 			{
 				if (iErrorCode != 10054)
-					OnError(iErrorCode, L"SendPost Error\n");
+					//OnError(iErrorCode, L"SendPost Error\n");
+					CCrashDump::Crash();
 
 				if (0 == InterlockedDecrement64((LONG64 *)&pSession->_lIOCount))
 					ReleaseSession(pSession);
@@ -605,19 +605,19 @@ void	CLanServer::CompleteRecv(SESSION *pSession, DWORD dwTransferred)
 void	CLanServer::CompleteSend(SESSION *pSession, DWORD dwTransferred)
 {
 	CNPacket *pPacket = NULL;
-	int iCnt;
+	int SentPacketCnt = pSession->_iSendPacketCnt;
 
 	//////////////////////////////////////////////////////////////////////////////
 	// 보냈던 데이터 제거
 	//////////////////////////////////////////////////////////////////////////////
-	for (iCnt = 0; iCnt < pSession->_iSendPacketCnt; iCnt++)
+	for (int iCnt = 0; iCnt < SentPacketCnt; iCnt++)
 	{
-		pSession->SendQ.Get((char *)&pPacket, sizeof(char *));
+		pSession->SendQ.Get((char *)&pPacket, 8);
 		pPacket->Free();
+
+		InterlockedDecrement((LONG *)&pSession->_iSendPacketCnt);
 	}
-
-	pSession->_iSendPacketCnt -= iCnt;
-
+	
 	//////////////////////////////////////////////////////////////////////////////
 	// SendFlag => false
 	//////////////////////////////////////////////////////////////////////////////
